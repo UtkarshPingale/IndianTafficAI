@@ -88,25 +88,59 @@ if not os.path.exists(SAMPLE_VIDEO):
 jobs_lock = threading.Lock()
 jobs = {}
 
-# Compute Device Initialization (Universal GPU / CPU Detection)
+# Compute Device Initialization (Universal GPU / CPU Detection with Kernel Execution Verification)
 def init_compute_device():
     has_cuda = False
     device = "cpu"
-    device_name = "CPU"
+    device_name = "CPU (Multi-Core)"
+    supports_fp16 = False
+    vram_free = 0.0
+    vram_total = 0.0
+
     if torch.cuda.is_available():
         try:
             torch.cuda.init()
             if torch.cuda.device_count() > 0:
+                raw_name = torch.cuda.get_device_name(0)
+
+                # CRITICAL TEST: Execute matrix math on device to verify kernel availability
+                # This catches "CUDA error: no kernel image is available for execution on the device"
+                test_t = torch.zeros((1, 1), device="cuda:0")
+                test_res = (test_t + 1.0).cpu()
+                del test_t, test_res
+
+                # Test FP16 support on this specific GPU
+                try:
+                    t_half = torch.zeros((1, 1), dtype=torch.float16, device="cuda:0")
+                    res_half = (t_half + 1.0).cpu()
+                    del t_half, res_half
+                    supports_fp16 = True
+                except Exception:
+                    supports_fp16 = False
+
+                try:
+                    free_b, tot_b = torch.cuda.mem_get_info(0)
+                    vram_free = round(free_b / (1024 ** 3), 2)
+                    vram_total = round(tot_b / (1024 ** 3), 2)
+                except Exception:
+                    pass
+
                 has_cuda = True
                 device = "cuda:0"
-                device_name = torch.cuda.get_device_name(0)
+                device_name = raw_name
                 torch.backends.cudnn.benchmark = True
-                print(f"[*] Compute Device: {device} ({device_name}) [CUDA Active, cuDNN Benchmark Enabled]")
+                print(f"[*] Compute Device: {device} ({device_name}) [CUDA Active, FP16: {supports_fp16}, VRAM: {vram_free}/{vram_total} GB]")
         except Exception as e:
-            print(f"[!] Warning: CUDA initialization error: {e}. Falling back to CPU mode.")
+            err_msg = str(e)
+            print(f"[!] Warning: NVIDIA GPU detected, but cannot execute CUDA 12.4 kernels ({err_msg}).")
+            print("[*] Automatically falling back to optimized CPU mode for universal compatibility!")
             has_cuda = False
             device = "cpu"
-            device_name = "CPU"
+            device_name = "CPU Mode (GPU Compute Architecture Mismatch)"
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     if not has_cuda:
         try:
@@ -115,9 +149,10 @@ def init_compute_device():
             print(f"[*] Compute Device: CPU ({threads} Multi-Threading Cores Active)")
         except Exception:
             pass
-    return has_cuda, device, device_name
 
-HAS_CUDA, DEVICE, DEVICE_NAME = init_compute_device()
+    return has_cuda, device, device_name, supports_fp16, vram_free, vram_total
+
+HAS_CUDA, DEVICE, DEVICE_NAME, SUPPORTS_FP16, VRAM_FREE_GB, VRAM_TOTAL_GB = init_compute_device()
 
 
 def get_video_info(video_path):
@@ -146,7 +181,7 @@ def extract_first_frame(video_path, output_jpg_path):
     return False
 
 
-def draw_frame_hud(frame, counter, fps_curr):
+def draw_frame_hud(frame, counter, fps_curr, active_device=DEVICE):
     """Draws sleek HUD card on the video frame using fast in-place ROI blending."""
     card_w = 320
     card_h = 240
@@ -168,11 +203,11 @@ def draw_frame_hud(frame, counter, fps_curr):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
     # Dynamic device indicator based on actual runtime hardware
-    if HAS_CUDA:
+    if HAS_CUDA and str(active_device).startswith("cuda"):
         dev_text = f"GPU: {DEVICE_NAME} | {fps_curr:.0f} FPS"
         dev_color = (6, 182, 212)
     else:
-        dev_text = f"CPU MODE (No CUDA) | {fps_curr:.0f} FPS"
+        dev_text = f"CPU MODE | {fps_curr:.0f} FPS"
         dev_color = (0, 140, 255)
 
     cv2.putText(frame, dev_text, (margin + 12, margin + 44),
@@ -300,20 +335,34 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
         p2 = (int(line_coords[2] * scale), int(line_coords[3] * scale))
         counter = LineCounter(pt1=p1, pt2=p2)
 
-        # Load YOLO model and optimize for RTX 4070 SUPER
+        # Load YOLO model and optimize for compute hardware
         model = YOLO(WEIGHTS_PATH)
-        if HAS_CUDA:
+        current_device = DEVICE
+        if HAS_CUDA and str(current_device).startswith("cuda"):
             try:
-                model.to(DEVICE)
-                try:
-                    model.model.half()
-                    dummy = np.zeros((384, 640, 3), dtype=np.uint8)
-                    model.predict(dummy, device=DEVICE, verbose=False, imgsz=640)
-                except Exception:
-                    # Fallback to FP32 for GPUs that don't support half precision
+                model.to(current_device)
+                dummy = np.zeros((384, 640, 3), dtype=np.uint8)
+                if SUPPORTS_FP16:
+                    try:
+                        model.model.half()
+                        model.predict(dummy, device=current_device, verbose=False, imgsz=640)
+                    except Exception:
+                        model.model.float()
+                        model.predict(dummy, device=current_device, verbose=False, imgsz=640)
+                else:
                     model.model.float()
-            except Exception:
-                pass
+                    model.predict(dummy, device=current_device, verbose=False, imgsz=640)
+            except Exception as e:
+                print(f"[!] Warning: CUDA execution failed on this GPU ({e}). Seamlessly switching to CPU mode...")
+                current_device = "cpu"
+                try:
+                    model.to("cpu")
+                    model.model.float()
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+        else:
+            current_device = "cpu"
 
         # Output paths
         web_video_path = os.path.join(OUTPUTS_DIR, f"web_{job_id}.mp4")
@@ -437,18 +486,34 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
 
             frame_idx += 1
 
-            # YOLO tracking inference with CUDA Tensor Cores + ByteTrack (high-speed GPU tracking)
+            # YOLO tracking inference with auto-fallback to CPU if CUDA fails
             track_kwargs = {
                 "source": frame,
                 "persist": True,
                 "verbose": False,
-                "device": DEVICE,
+                "device": current_device,
                 "conf": conf_thresh,
                 "iou": 0.5,
                 "imgsz": 640,
                 "tracker": "bytetrack.yaml"
             }
-            results = model.track(**track_kwargs)[0]
+            try:
+                results = model.track(**track_kwargs)[0]
+            except Exception as e:
+                err_str = str(e).lower()
+                if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str) and current_device != "cpu":
+                    print(f"[!] CUDA error on frame {frame_idx} ({e}). Seamlessly switching to CPU mode...")
+                    current_device = "cpu"
+                    track_kwargs["device"] = "cpu"
+                    try:
+                        model.to("cpu")
+                        model.model.float()
+                        torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+                    results = model.track(**track_kwargs)[0]
+                else:
+                    raise e
 
             active_ids = set()
             boxes = results.boxes
@@ -496,8 +561,8 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
                 fps_window_start = now
                 fps_window_frames = 0
 
-            # Draw HUD card with true live FPS
-            frame = draw_frame_hud(frame, counter, live_fps)
+            # Draw HUD card with true live FPS and active device indicator
+            frame = draw_frame_hud(frame, counter, live_fps, active_device=current_device)
 
             # Output frame
             if pipe_proc and pipe_proc.stdin:
@@ -576,7 +641,7 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
             "video_name": os.path.basename(video_path),
             "fps": avg_fps,
             "total_frames": frame_idx,
-            "device_name": DEVICE_NAME,
+            "device_name": DEVICE_NAME if current_device != "cpu" else "CPU Mode",
             "process_time": t_total
         }
 
@@ -745,11 +810,11 @@ def download_csv(job_id):
 @app.route("/api/hardware-status")
 def hardware_status():
     """Returns real-time GPU / CUDA / CPU compute information."""
-    has_cuda = torch.cuda.is_available()
+    has_cuda = DEVICE.startswith("cuda")
     vram_free_gb = 0.0
     vram_total_gb = 0.0
     device_name = DEVICE_NAME
-    if has_cuda:
+    if has_cuda and torch.cuda.is_available():
         try:
             free_b, tot_b = torch.cuda.mem_get_info(0)
             vram_free_gb = round(free_b / (1024 ** 3), 2)
@@ -760,6 +825,9 @@ def hardware_status():
         "has_cuda": has_cuda,
         "device": DEVICE,
         "device_name": device_name,
+        "cuda_version": torch.version.cuda or "N/A",
+        "torch_version": torch.__version__,
+        "supports_fp16": SUPPORTS_FP16,
         "vram_free_gb": vram_free_gb,
         "vram_total_gb": vram_total_gb
     })

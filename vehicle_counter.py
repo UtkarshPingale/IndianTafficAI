@@ -73,11 +73,16 @@ class VehicleCounterSystem:
             if torch.cuda.is_available():
                 try:
                     torch.cuda.init()
+                    # Test actual kernel execution on GPU architecture
+                    test_t = torch.zeros((1, 1), device="cuda:0") + 1.0
+                    del test_t
+                    torch.cuda.empty_cache()
                     self.device = "cuda:0"
                     self.device_name = torch.cuda.get_device_name(0)
                 except Exception as e:
+                    print(f"[!] CUDA GPU detected but kernel execution failed ({e}). Falling back to CPU mode.")
                     self.device = "cpu"
-                    self.device_name = f"CPU (CUDA error: {e})"
+                    self.device_name = "CPU Mode (GPU Architecture Mismatch)"
             else:
                 self.device = "cpu"
                 self.device_name = "CPU"
@@ -406,7 +411,24 @@ class VehicleCounterSystem:
                     if self.target_class_ids is not None:
                         track_args["classes"] = self.target_class_ids
 
-                    results = self.model.track(**track_args)[0]
+                    try:
+                        results = self.model.track(**track_args)[0]
+                    except Exception as e:
+                        err_str = str(e).lower()
+                        if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str) and self.device != "cpu":
+                            print(f"[!] CUDA runtime error: {e}. Switching seamlessly to CPU...")
+                            self.device = "cpu"
+                            self.device_name = "CPU Mode"
+                            track_args["device"] = "cpu"
+                            try:
+                                self.model.to("cpu")
+                                self.model.model.float()
+                                torch.cuda.empty_cache()
+                            except Exception:
+                                pass
+                            results = self.model.track(**track_args)[0]
+                        else:
+                            raise e
 
                     # Process tracked detections
                     boxes = results.boxes

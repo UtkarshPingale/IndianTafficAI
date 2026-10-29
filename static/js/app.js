@@ -12,21 +12,31 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(hw => {
                 const label = document.getElementById('gpuDeviceLabel');
                 const dot = document.getElementById('gpuStatusDot');
+                const badge = document.getElementById('gpuBadge');
                 if (!label) return;
 
                 if (hw.has_cuda) {
                     label.textContent = `${hw.device_name}`;
-                    label.title = `CUDA ${hw.cuda_version} | PyTorch ${hw.torch_version} | Free VRAM: ${hw.vram_free_gb}/${hw.vram_total_gb} GB`;
-                    if (dot) dot.style.background = '#10b981';
+                    label.style.color = '#10b981';
+                    if (badge) badge.title = `CUDA Hardware Acceleration Active\nDevice: ${hw.device_name}\nCUDA: ${hw.cuda_version} | PyTorch: ${hw.torch_version}\nFree VRAM: ${hw.vram_free_gb} / ${hw.vram_total_gb} GB`;
+                    if (dot) {
+                        dot.style.background = '#10b981';
+                        dot.classList.add('pulse');
+                    }
                 } else {
-                    label.textContent = `CPU Mode (${hw.device_name}) - No CUDA`;
+                    label.textContent = `${hw.device_name}`;
                     label.style.color = '#f59e0b';
-                    if (dot) dot.style.background = '#f59e0b';
-                    label.title = `PyTorch is running in CPU mode (${hw.torch_version}). Run using .\\venv\\Scripts\\python.exe to enable GPU!`;
+                    if (badge) badge.title = `Compute: ${hw.device_name}\nCUDA hardware acceleration unavailable or GPU architecture incompatible.\nUsing optimized multi-threaded CPU engine.`;
+                    if (dot) {
+                        dot.style.background = '#f59e0b';
+                        dot.classList.remove('pulse');
+                    }
                 }
             })
             .catch(err => console.warn('Could not query hardware status:', err));
     }
+    checkHardwareStatus();
+    setInterval(checkHardwareStatus, 15000);
     // --- System Version & Auto-Update Logic ---
     let latestUpdateInfo = null;
 

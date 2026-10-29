@@ -49,6 +49,11 @@ def get_hardware_info():
         try:
             device_name = torch.cuda.get_device_name(0)
             cuda_ver = torch.version.cuda or "Active"
+            # Test actual CUDA kernel execution on host GPU
+            test_tensor = torch.zeros((1, 1), device="cuda:0") + 1.0
+            del test_tensor
+            torch.cuda.empty_cache()
+
             free_b, tot_b = torch.cuda.mem_get_info(0)
             free_gb = round(free_b / (1024 ** 3), 2)
             tot_gb = round(tot_b / (1024 ** 3), 2)
@@ -56,7 +61,8 @@ def get_hardware_info():
             compute_mode = "Hardware CUDA Acceleration (FP16 Tensor Cores)"
         except Exception as e:
             has_cuda = False
-            device_name = f"CPU (CUDA init error: {e})"
+            device_name = "CPU Mode (GPU Incompatible / Architecture Mismatch)"
+            compute_mode = "CPU Multi-Threading (GPU Fallback)"
 
     return {
         "has_cuda": has_cuda,
@@ -83,7 +89,8 @@ def print_banner(hw):
     else:
         print(f"    [!] Compute Device : {hw['device_name']}")
         print(f"    [!] Acceleration   : Multi-Threaded CPU Mode ({hw['cpu_count']} Threads)")
-        print(f"    [i] Notice: No NVIDIA GPU detected. Running with full CPU optimizations.")
+        print(f"    [i] Notice: CUDA hardware acceleration unavailable or GPU architecture incompatible.")
+        print(f"        Running with full multi-threaded CPU optimizations.")
     print("-" * 72)
 
 
