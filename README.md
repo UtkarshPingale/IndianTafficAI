@@ -28,17 +28,30 @@ Accelerated for **NVIDIA GeForce RTX 4070 SUPER** (12GB VRAM, CUDA 12.4, Tensor 
 ## 🛠️ System Architecture
 
 ```
-Vehicle-Detection-with-YOLOv11/
+IndianTrafficAI/
 ├── models/
 │   ├── yolo11s_indian_traffic.pt     # IISc UVH-26 fine-tuned weights (14 Indian traffic classes)
 │   └── uvh_classes.txt               # Class definitions
+├── static/                           # Web UI static assets
+│   ├── css/style.css                 # Glassmorphic dark theme dashboard
+│   └── js/app.js                     # Interactive line canvas & stats engine
+├── templates/
+│   └── index.html                    # Web UI Traffic Studio & Update modal
 ├── vehicle_counter.py                # Main inference, tracking & line counting engine
-├── line_counter.py                   # Virtual line geometry, crossing intersection & deduplication
+├── line_counter.py                   # Virtual line geometry & crossing intersection
 ├── vehicle_classes.py                # Class mapping & color palettes
-├── train_indian_vehicles.py          # Custom training & fine-tuning script for RTX 4070 Super
-├── app.py                            # Streamlit web dashboard
-├── traffic_counts.csv                # Generated CSV report
-├── output_counted.mp4                # Generated video with annotations & HUD
+├── excel_reporter.py                 # Multi-sheet formatted Excel report generator
+├── web_server.py                     # Flask web app & REST API
+├── main_launcher.py                  # Universal startup launcher (GPU/CPU fallback)
+├── auto_updater.py                   # Client auto-update & restart engine
+├── publish_update.py                 # Developer release packaging tool
+├── requirements.txt                  # Python dependencies
+├── IndianTrafficAI.spec              # PyInstaller executable build recipe
+├── build_exe.bat                     # 1-Click executable builder
+├── Launch_IndianTrafficAI.bat        # 1-Click launcher
+├── package_portable_zip.bat          # 1-Click release zip packager
+├── publish_update.bat                # 1-Click update publisher
+├── version.json                      # Version tracking manifest
 └── README.md
 ```
 
@@ -94,13 +107,29 @@ python publish_update.py --version 1.0.1 --notes "Improved auto-rickshaw detecti
 
 ## ⚡ Quick Start (Python Source)
 
-### 1. Activate Environment
+### 1. Setup Environment & Install Dependencies
 
 ```powershell
+# Create & activate Python virtual environment
+python -m venv venv
 .\venv\Scripts\activate
+
+# Install requirements
+pip install -r requirements.txt
+
+# For NVIDIA GPU (CUDA 12.4) acceleration:
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
-### 2. Run Real-Time Counting on Video (Interactive Mode)
+### 2. Building the Standalone Executable (.exe)
+
+To compile the self-contained executable with PyInstaller:
+```powershell
+.\build_exe.bat
+```
+This builds `dist\IndianTrafficAI\IndianTrafficAI.exe` containing all bundled CUDA runtime DLLs.
+
+### 3. Run Real-Time Counting on Video (Interactive Mode)
 
 ```powershell
 python vehicle_counter.py --source compressed_output_TrafficPolice.mp4

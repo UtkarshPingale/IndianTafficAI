@@ -1,0 +1,26 @@
+# Core Deep Learning & Computer Vision
+ultralytics>=8.3.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+scipy>=1.10.0
+pillow>=10.0.0
+
+# PyTorch
+# NOTE for NVIDIA GPU acceleration (CUDA 12.4):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# For CPU-only systems:
+#   pip install torch torchvision
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Data Processing & Reporting
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Web Dashboard & Remote Auto-Updater
+Flask>=2.3.0
+Werkzeug>=2.3.0
+requests>=2.28.0
+
+# Executable Packaging & Distribution
+pyinstaller>=6.0.0
