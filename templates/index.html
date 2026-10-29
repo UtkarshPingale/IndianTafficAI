@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Vehicle Detection & Virtual Line Counter | YOLOv11 + RTX 4070 SUPER</title>
+    <meta name="description" content="AI-powered Indian traffic detection, tracking, virtual line counting, and automated Excel audit report generation running on NVIDIA RTX 4070 SUPER.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- TOP NAVIGATION & STATUS BAR -->
+        <header class="app-header">
+            <div class="header-branding">
+                <div class="logo-badge">
+                    <span class="logo-icon">🚦</span>
+                </div>
+                <div>
+                    <h1 class="app-title">Indian Traffic AI Counter</h1>
+                    <p class="app-subtitle">YOLOv11 Virtual Line Vehicle Detection & Excel Audit Generator</p>
+                </div>
+            </div>
+
+            <div class="hardware-badges">
+                <div class="badge badge-gpu" id="gpuBadge" title="Hardware Acceleration Status">
+                    <span class="status-dot pulse" id="gpuStatusDot"></span>
+                    <span class="badge-label">Compute:</span>
+                    <span class="badge-value" id="gpuDeviceLabel">Checking GPU...</span>
+                </div>
+                <div class="badge badge-model" title="Trained Model Architecture">
+                    <span class="badge-label">Model:</span>
+                    <span class="badge-value">YOLOv11s UVH-26</span>
+                </div>
+                <div class="badge badge-version" id="versionBadge" style="cursor:pointer;" title="Click to check for updates">
+                    <span class="badge-label">Ver:</span>
+                    <span class="badge-value" id="appVersionLabel">v1.0.0</span>
+                    <span id="updateAlertDot" style="display:none; width:8px; height:8px; border-radius:50%; background:#38bdf8; margin-left:6px;" class="pulse"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN WORKSPACE -->
+        <main class="main-content">
+            <!-- SECTION 1: VIDEO INPUT & LINE SETUP -->
+            <section class="card config-card" id="setupSection">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <span class="step-num">1</span>
+                        <h2>Upload Video & Adjust Virtual Line</h2>
+                    </div>
+                    <span class="card-desc">Select an Indian traffic video and adjust the counting line directly on the road preview.</span>
+                </div>
+
+                <div class="setup-grid">
+                    <!-- Left: Upload & Presets -->
+                    <div class="upload-column">
+                        <div class="dropzone" id="dropzone">
+                            <input type="file" id="videoFileInput" accept="video/mp4,video/avi,video/mov,video/mkv" class="file-input-hidden">
+                            <div class="dropzone-content">
+                                <div class="upload-icon-circle">
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                </div>
+                                <h3 class="dropzone-title">Drag & drop your traffic video here</h3>
+                                <p class="dropzone-sub">Supports MP4, AVI, MOV, MKV</p>
+                                <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Browse Computer</button>
+                            </div>
+                        </div>
+
+                        <div class="sample-preset-box">
+                            <span class="preset-label">Quick Demo:</span>
+                            <button type="button" class="btn btn-preset" id="loadSampleBtn">
+                                <span>🎥 Load Sample Indian Traffic Video</span>
+                            </button>
+                        </div>
+
+                        <!-- Active File Info -->
+                        <div class="file-info-bar hidden" id="fileInfoBar">
+                            <div class="file-info-icon">📄</div>
+                            <div class="file-info-details">
+                                <span class="file-name" id="fileNameDisplay">sample_video.mp4</span>
+                                <span class="file-meta" id="fileMetaDisplay">1280x720 • 25 FPS</span>
+                            </div>
+                            <button type="button" class="btn-icon" id="removeFileBtn" title="Remove video">✕</button>
+                        </div>
+
+                        <!-- Detection Tuning Parameters -->
+                        <div class="params-group">
+                            <div class="param-row">
+                                <div class="param-label-wrap">
+                                    <label for="confSlider">Detection Confidence</label>
+                                    <span class="param-val" id="confVal">0.35</span>
+                                </div>
+                                <input type="range" id="confSlider" min="0.15" max="0.80" step="0.05" value="0.35" class="range-slider">
+                            </div>
+
+                            <div class="param-row">
+                                <div class="param-label-wrap">
+                                    <label for="lineYSlider">Virtual Line Height (Y-Offset)</label>
+                                    <span class="param-val" id="lineYVal">60%</span>
+                                </div>
+                                <input type="range" id="lineYSlider" min="15" max="90" step="1" value="60" class="range-slider">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Interactive Canvas for Line Placement -->
+                    <div class="canvas-column">
+                        <div class="canvas-header">
+                            <span class="canvas-instruction">💡 <strong>Click & drag</strong> the yellow endpoints to angle the virtual line along road lanes:</span>
+                            <button type="button" class="btn btn-ghost btn-xs" id="resetLineBtn">Reset Line</button>
+                        </div>
+                        <div class="canvas-wrapper" id="canvasWrapper">
+                            <canvas id="lineCanvas" width="640" height="360"></canvas>
+                            <div class="canvas-placeholder" id="canvasPlaceholder">
+                                <div class="placeholder-icon">🛣️</div>
+                                <p>Upload a video or click "Load Sample" to preview road frames and position the line</p>
+                            </div>
+                        </div>
+                        <div class="line-coords-display">
+                            <span>Line Coordinates:</span>
+                            <code id="lineCoordsText">Start (100, 216) ➔ End (540, 216)</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Launch Button Action Bar -->
+                <div class="action-bar">
+                    <button type="button" class="btn btn-primary btn-lg" id="startProcessBtn" disabled>
+                        <span class="btn-icon-start">⚡</span>
+                        <span id="startBtnText">Start Real-Time Processing on RTX 4070 SUPER</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- SECTION 2: LIVE PROCESSING OVERLAY & PROGRESS -->
+            <section class="card progress-card hidden" id="progressSection">
+                <div class="progress-header">
+                    <div class="status-indicator">
+                        <span class="spinner"></span>
+                        <div>
+                            <h3 id="progressStatusTitle">Running GPU Inference & Vehicle Tracking...</h3>
+                            <p class="progress-sub" id="progressSubText">Processing frames at high speed with YOLOv11s</p>
+                        </div>
+                    </div>
+                    <div class="live-speed-badge">
+                        <span id="liveFpsText">-- FPS</span>
+                    </div>
+                </div>
+
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+                </div>
+
+                <div class="progress-stats-row">
+                    <span id="progressPercentText">0% Complete</span>
+                    <span id="progressFramesText">Frame 0 / 0</span>
+                    <span id="progressEtaText">ETA: Calculating...</span>
+                </div>
+
+                <!-- Live Ticker of counts while processing -->
+                <div class="live-counter-strip" id="liveCounterStrip">
+                    <div class="live-chip"><span class="chip-label">Total:</span> <strong id="liveTotalCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🚗 Cars:</span> <strong id="liveCarCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🛺 Auto:</span> <strong id="liveAutoCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🏍️ Bikes:</span> <strong id="liveBikeCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🚌 Buses:</span> <strong id="liveBusCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🚛 Trucks:</span> <strong id="liveTruckCount">0</strong></div>
+                    <div class="live-chip"><span class="chip-label">🚐 Tempos:</span> <strong id="liveTempoCount">0</strong></div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: RESULTS, VIDEO PREVIEW & EXCEL TABLE PREVIEW -->
+            <section class="card results-card hidden" id="resultsSection">
+                <div class="results-header">
+                    <div class="results-title-group">
+                        <div class="success-icon">✓</div>
+                        <div>
+                            <h2>Traffic Audit Complete</h2>
+                            <p class="results-subtitle" id="resultsSummaryText">Processed 750 frames • 11 vehicles counted • Excel report generated</p>
+                        </div>
+                    </div>
+
+                    <!-- Direct Download Action Buttons -->
+                    <div class="download-btn-group">
+                        <a href="#" class="btn btn-excel" id="downloadExcelBtn" download>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="8" y1="13" x2="16" y2="13"></line>
+                                <line x1="8" y1="17" x2="16" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            <span>Download Excel (.xlsx)</span>
+                        </a>
+
+                        <a href="#" class="btn btn-secondary" id="downloadCsvBtn" download>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <span>Download CSV</span>
+                        </a>
+
+                        <a href="#" class="btn btn-secondary" id="downloadVideoBtn" download>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                            </svg>
+                            <span>Download Video (.mp4)</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- KPI METRIC CARDS -->
+                <div class="kpi-grid">
+                    <div class="kpi-card kpi-total">
+                        <div class="kpi-icon">📊</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Total Count</span>
+                            <span class="kpi-val" id="kpiTotal">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-inward">
+                        <div class="kpi-icon">⬇️</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Inward Flow</span>
+                            <span class="kpi-val" id="kpiInward">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-outward">
+                        <div class="kpi-icon">⬆️</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Outward Flow</span>
+                            <span class="kpi-val" id="kpiOutward">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-auto">
+                        <div class="kpi-icon">🛺</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Auto-Rickshaw</span>
+                            <span class="kpi-val" id="kpiAuto">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-bike">
+                        <div class="kpi-icon">🏍️</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Two-Wheeler</span>
+                            <span class="kpi-val" id="kpiBike">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-car">
+                        <div class="kpi-icon">🚗</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Car (Hatch/SUV)</span>
+                            <span class="kpi-val" id="kpiCar">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-bus">
+                        <div class="kpi-icon">🚌</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Bus</span>
+                            <span class="kpi-val" id="kpiBus">0</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-truck">
+                        <div class="kpi-icon">🚛</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Truck</span>
+                            <span class="kpi-val" id="kpiTruck">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DUAL PREVIEW LAYOUT: VIDEO ON LEFT, EXCEL TABLE ON RIGHT -->
+                <div class="preview-layout">
+                    <!-- LEFT COLUMN: VIDEO PREVIEW -->
+                    <div class="preview-col video-preview-col">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <span class="panel-icon">🎬</span>
+                                <h3>Annotated Video Preview</h3>
+                            </div>
+                            <span class="panel-tag">H.264 • Virtual Line Overlay</span>
+                        </div>
+                        <div class="video-container">
+                            <video id="resultVideoPlayer" controls playsinline preload="metadata">
+                                Your browser does not support the video tag.
+                            </video>
+                        </div>
+                        <div class="video-footer">
+                            <span>Overlay includes: Virtual line, cross-directional trails, class badges & confidence.</span>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT COLUMN: INTERACTIVE EXCEL PREVIEW ("EXCEL OF THE EXCEL") -->
+                    <div class="preview-col excel-preview-col">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <span class="panel-icon">📑</span>
+                                <h3>Generated Excel Sheet Preview</h3>
+                            </div>
+                            <span class="panel-tag green-tag">Sheet: Crossing Events Log</span>
+                        </div>
+
+                        <!-- Table Filtering & Search Controls -->
+                        <div class="table-toolbar">
+                            <div class="search-box">
+                                <input type="text" id="tableSearchInput" placeholder="Search by ID, class, direction..." class="input-search">
+                            </div>
+                            <div class="filter-group">
+                                <select id="classFilterSelect" class="select-filter">
+                                    <option value="ALL">All Categories</option>
+                                    <option value="Auto-Rickshaw">Auto-Rickshaw</option>
+                                    <option value="Bike / Two-Wheeler">Bike / Two-Wheeler</option>
+                                    <option value="Car">Car</option>
+                                    <option value="Bus">Bus</option>
+                                    <option value="Truck">Truck</option>
+                                    <option value="Tempo / LCV">Tempo / LCV</option>
+                                </select>
+
+                                <select id="dirFilterSelect" class="select-filter">
+                                    <option value="ALL">All Directions</option>
+                                    <option value="Inward">Inward (⬇️)</option>
+                                    <option value="Outward">Outward (⬆️)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Interactive Data Table -->
+                        <div class="table-container">
+                            <table class="excel-table" id="excelDataTable">
+                                <thead>
+                                    <tr>
+                                        <th>S.No</th>
+                                        <th>Frame</th>
+                                        <th>Time</th>
+                                        <th>Track ID</th>
+                                        <th>Category</th>
+                                        <th>Sub-Class</th>
+                                        <th>Confidence</th>
+                                        <th>Direction</th>
+                                        <th>Point (X, Y)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="excelTableBody">
+                                    <!-- Populated via JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Pagination Footer -->
+                        <div class="table-footer">
+                            <span id="tableCountInfo">Showing 1 to 10 of 11 entries</span>
+                            <div class="pagination-controls">
+                                <button type="button" class="btn btn-ghost btn-xs" id="prevPageBtn" disabled>◀ Prev</button>
+                                <span class="page-num" id="currentPageText">1</span>
+                                <button type="button" class="btn btn-ghost btn-xs" id="nextPageBtn" disabled>Next ▶</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECONDARY ACCORDION: CLASS DISTRIBUTION & METADATA -->
+                <div class="summary-breakdown-card">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="panel-icon">📈</span>
+                            <h3>Vehicle Class Distribution Summary</h3>
+                        </div>
+                        <span class="panel-tag">Executive Summary Sheet</span>
+                    </div>
+
+                    <div class="breakdown-grid" id="breakdownGrid">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Process Another Video Button -->
+                <div class="restart-bar">
+                    <button type="button" class="btn btn-secondary" id="processAnotherBtn">
+                        <span>🔄 Process Another Video</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- FOOTER -->
+        <footer class="app-footer">
+            <p>Indian Traffic Analytics & Virtual Line Crossing System • Powered by YOLOv11 + PyTorch CUDA</p>
+        </footer>
+    </div>
+
+    <!-- UPDATE MODAL DIALOG -->
+    <div id="updateModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:99999; align-items:center; justify-content:center;">
+        <div style="background:#1e293b; border:1px solid #334155; border-radius:12px; padding:24px; max-width:480px; width:92%; color:#f8fafc; box-shadow:0 20px 40px rgba(0,0,0,0.6);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:1.25rem; font-weight:700; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+                    <span>🚀</span> <span id="updateModalTitle">System Update Available</span>
+                </h3>
+                <button id="closeUpdateModal" style="background:none; border:none; color:#94a3b8; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <div style="background:#0f172a; border-radius:8px; padding:12px 16px; margin-bottom:16px; font-size:0.9rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <span style="color:#94a3b8;">Installed Version:</span>
+                    <span id="modalCurrentVer" style="font-weight:600;">v1.0.0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="color:#94a3b8;">Latest Version:</span>
+                    <span id="modalRemoteVer" style="color:#10b981; font-weight:700;">Checking...</span>
+                </div>
+            </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:0.8rem; text-transform:uppercase; color:#94a3b8; letter-spacing:0.5px;">Changelog / Release Notes:</label>
+                <div id="modalChangelog" style="background:#0f172a; border-radius:8px; padding:12px; font-size:0.85rem; color:#cbd5e1; max-height:120px; overflow-y:auto; margin-top:6px; border:1px solid #334155;">
+                    Checking for updates...
+                </div>
+            </div>
+            <div id="updateProgressContainer" style="display:none; margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:6px;">
+                    <span id="updateProgressStatusText" style="color:#38bdf8;">Downloading update...</span>
+                    <span id="updateProgressPctText" style="color:#38bdf8; font-weight:700;">0%</span>
+                </div>
+                <div style="height:8px; background:#0f172a; border-radius:4px; overflow:hidden;">
+                    <div id="updateProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg, #38bdf8, #10b981); transition:width 0.3s;"></div>
+                </div>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:flex-end;">
+                <button id="cancelUpdateBtn" style="background:#334155; border:none; color:#f8fafc; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">Later</button>
+                <button id="startUpdateBtn" style="background:linear-gradient(135deg, #0284c7, #0369a1); border:none; color:#fff; padding:8px 20px; border-radius:6px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:8px;">
+                    <span>⚡</span> <span id="startUpdateBtnText">Update & Restart Now</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
