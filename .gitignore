@@ -1,43 +1,57 @@
-# Python Virtual Environment
+# ==============================================================================
+# IndianTrafficAI - Git Ignore Rules
+# ==============================================================================
+
+# Python Virtual Environments
 venv/
 env/
+.venv/
 .env
 
-# PyInstaller Build & Dist Artifacts (Distribute via GitHub Releases)
+# PyInstaller Standalone Build & Distribution Artifacts (Local only; distribute via GitHub Releases)
 build/
 dist/
 *.spec.bak
 _update_staging/
 apply_update.bat
 *.zip
+*.tar
+*.gz
 
-# Local Test Videos, Uploads & Outputs
+# Local Runtime Uploads, Output Videos & Temporary Reports
 outputs/
 uploads/
 output_counted.mp4
 web_preview.mp4
 test_report.xlsx
 traffic_counts.csv
+*.mp4.part
+*.xlsx
+*.csv
 
-# Wheels and temporary downloads
+# Pip Wheels, Temporary Downloads & Scratch Files
 wheels/
 *.whl
 *.part
 *.tmp
+*.log
 
-# Byte-compiled / cache files
+# Byte-compiled / Cache files
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.coverage
+htmlcov/
 
-# IDE / Editor configuration
+# IDE & Editor Configurations
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS generated files
+# Operating System Generated Files
 Thumbs.db
 ehthumbs.db
 Desktop.ini
