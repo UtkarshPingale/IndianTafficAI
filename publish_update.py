@@ -29,7 +29,7 @@ def build_update_zip(version_str, output_zip_path):
     
     count = 0
     single_exe = os.path.join(BASE_DIR, "dist", "IndianTrafficAI.exe")
-    with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         if os.path.exists(single_exe):
             zf.write(single_exe, "IndianTrafficAI.exe")
             count += 1
