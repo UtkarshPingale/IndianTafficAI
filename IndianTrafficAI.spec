@@ -40,7 +40,8 @@ EXCLUDE_DLLS = {
     'cusolver64_11.dll', 'cusolverMg64_11.dll', 'cudnn_adv64_9.dll',
     'curand64_10.dll', 'cudnn_engines_precompiled64_9.dll',
     'cudnn_engines_runtime_compiled64_9.dll', 'nvrtc64_120_0.dll',
-    'nvJitLink_120_0.dll', 'cupti64_2024.1.0.dll', 'nvrtc-builtins64_124.dll'
+    'nvrtc64_120_0.alt.dll', 'nvJitLink_120_0.dll', 'cupti64_2024.1.0.dll',
+    'cupti64_2025.1.0.dll', 'nvrtc-builtins64_124.dll', 'nvrtc-builtins64_128.dll'
 }
 all_bins = [b for b in (torch_bins + torchvision_bins) if not any(b[0].endswith(x) for x in EXCLUDE_DLLS)]
 
@@ -91,6 +92,9 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Crucial: Filter a.binaries directly to strip PyInstaller's auto-collected 2.1 GB of unused DLLs
+a.binaries = [x for x in a.binaries if not any(x[0].endswith(e) or os.path.basename(x[0]) == e for e in EXCLUDE_DLLS)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
