@@ -20,13 +20,11 @@ pyinstaller --clean --noconfirm IndianTrafficAI.spec
 if errorlevel 1 (
     echo.
     echo [ERROR] PyInstaller build failed!
-    pause
     exit /b 1
 )
 
 echo.
 echo ======================================================================
 echo [OK] Build completed successfully!
-echo Executable located at: dist\IndianTrafficAI\IndianTrafficAI.exe
+echo Single Standalone Executable: dist\IndianTrafficAI.exe
 echo ======================================================================
-pause

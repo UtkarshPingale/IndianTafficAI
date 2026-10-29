@@ -27,18 +27,25 @@ def build_update_zip(version_str, output_zip_path):
     """Packages updated executable, scripts, and model into a deployable update archive."""
     print(f"[*] Compressing update files into: {output_zip_path}")
     
-    # We include everything in dist/IndianTrafficAI needed to update client systems
     count = 0
+    single_exe = os.path.join(BASE_DIR, "dist", "IndianTrafficAI.exe")
     with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(DIST_DIR):
-            for file in files:
-                # Exclude temporary staging or user output videos
-                if "_update_staging" in root or "outputs" in root or "uploads" in root:
-                    continue
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, DIST_DIR)
-                zf.write(full_path, rel_path)
-                count += 1
+        if os.path.exists(single_exe):
+            zf.write(single_exe, "IndianTrafficAI.exe")
+            count += 1
+        elif os.path.exists(DIST_DIR):
+            for root, dirs, files in os.walk(DIST_DIR):
+                for file in files:
+                    if "_update_staging" in root or "outputs" in root or "uploads" in root:
+                        continue
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, DIST_DIR)
+                    zf.write(full_path, rel_path)
+                    count += 1
+
+        if os.path.exists(VERSION_FILE):
+            zf.write(VERSION_FILE, "version.json")
+            count += 1
 
     print(f"[OK] Packaged {count} files into {output_zip_path} ({round(os.path.getsize(output_zip_path) / (1024**2), 1)} MB).")
 

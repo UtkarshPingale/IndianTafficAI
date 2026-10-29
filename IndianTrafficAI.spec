@@ -33,7 +33,14 @@ all_datas = ultralytics_datas + ffmpeg_datas + project_datas
 # Collect torch and torchvision dynamic libraries (including all CUDA 12.4 runtime DLLs)
 torch_bins = collect_dynamic_libs('torch')
 torchvision_bins = collect_dynamic_libs('torchvision')
-all_bins = torch_bins + torchvision_bins
+
+# Exclude unnecessary heavy scientific DLLs (Fourier, sparse matrices, solvers) to stay within single-file limits
+EXCLUDE_DLLS = {
+    'cufft64_11.dll', 'cufftw64_11.dll', 'cusparse64_12.dll',
+    'cusolver64_11.dll', 'cusolverMg64_11.dll', 'cudnn_adv64_9.dll',
+    'curand64_10.dll'
+}
+all_bins = [b for b in (torch_bins + torchvision_bins) if not any(b[0].endswith(x) for x in EXCLUDE_DLLS)]
 
 # Hidden imports
 hidden_imports = [
@@ -85,31 +92,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Single-file standalone executable (Everything bundled into IndianTrafficAI.exe)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='IndianTrafficAI',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name='IndianTrafficAI',
 )

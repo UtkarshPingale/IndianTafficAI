@@ -268,6 +268,7 @@ def main():
     parser.add_argument("--line", type=str, default=None, help="Line coordinates as 'x1,y1,x2,y2'")
     parser.add_argument("--conf", type=float, default=0.35, help="Detection confidence threshold")
     parser.add_argument("--max-frames", type=int, default=None, help="Maximum number of frames to process")
+    parser.add_argument("--select", action="store_true", help="Open Windows file picker dialog to choose a video")
     parser.add_argument("--check-update", action="store_true", help="Check for available updates from remote manifest")
     parser.add_argument("--update", action="store_true", help="Download latest update, apply it, and restart system")
 
@@ -318,7 +319,7 @@ def main():
     elif args.interactive or (args.source and not args.batch):
         src = args.source or find_sample_video()
         launch_interactive_window(video_path=src, line=args.line, conf=args.conf)
-    elif args.select:
+    elif getattr(args, 'select', False):
         launch_interactive_window(video_path=None, line=args.line, conf=args.conf)
     else:
         # Default mode: Launch Web Dashboard
@@ -326,4 +327,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print("\n" + "=" * 60)
+        print(" [FATAL ERROR] An unexpected error occurred:")
+        print("=" * 60)
+        traceback.print_exc()
+        if getattr(sys, "frozen", False):
+            input("\nPress Enter to exit...")

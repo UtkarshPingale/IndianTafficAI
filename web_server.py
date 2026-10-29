@@ -748,6 +748,7 @@ def hardware_status():
     has_cuda = torch.cuda.is_available()
     vram_free_gb = 0.0
     vram_total_gb = 0.0
+    device_name = DEVICE_NAME
     if has_cuda:
         try:
             free_b, tot_b = torch.cuda.mem_get_info(0)
@@ -755,6 +756,13 @@ def hardware_status():
             vram_total_gb = round(tot_b / (1024 ** 3), 2)
         except Exception:
             pass
+    return jsonify({
+        "has_cuda": has_cuda,
+        "device": DEVICE,
+        "device_name": device_name,
+        "vram_free_gb": vram_free_gb,
+        "vram_total_gb": vram_total_gb
+    })
 
 # --- Auto-Update Endpoints ---
 update_progress = {"percent": 0, "status": "idle", "error": None}
