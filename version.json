@@ -1,10 +1,10 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "app_name": "Indian Traffic AI",
   "release_date": "2026-10-29",
   "update_manifest_url": "https://raw.githubusercontent.com/UtkarshPingale/IndianTafficAI/main/version.json",
   "download_url": "https://github.com/UtkarshPingale/IndianTafficAI/releases/latest/download/IndianTrafficAI_Update.zip",
-  "changelog": "1.0.1",
+  "changelog": "1.0.3",
   "auto_check_on_launch": true,
   "auto_restart_after_update": true
 }
