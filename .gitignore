@@ -11,6 +11,7 @@ env/
 # PyInstaller Standalone Build & Distribution Artifacts (Local only; distribute via GitHub Releases)
 build/
 dist/
+dist*/
 *.spec.bak
 _update_staging/
 apply_update.bat
