@@ -80,7 +80,47 @@ A fully self-contained Windows executable is built in `dist/IndianTrafficAI/` an
 
 ---
 
-## 🔄 Automatic Remote Updates & Restart System
+## ⚡ Distributed Client GPU Worker Mode (Ultra-Lightweight ~29 MB)
+
+Instead of sending massive 2.7 GB executables to other PCs, you can run the **Web UI on your PC** and use the **NVIDIA GPU on the Client PC** (e.g., RTX 5070 / RTX 4070) via a lightweight worker node (~29 MB):
+
+```
+ [Any User's Browser (Chrome/Edge)]
+              │  http://<Your-Server-IP>:5000
+              ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │                 CENTRAL SERVER (Your PC)                    │
+ │  - Web Studio Dashboard (Upload video, drag line, settings) │
+ │  - Job Dispatcher & Queue (Pending, Processing, Done)       │
+ │  - Excel Audit Generator & Video Storage                    │
+ └──────────────────────────┬──────────────────────────────────┘
+                            │ REST API (Jobs, Frames, Counts)
+                            ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │             CLIENT GPU WORKER (Client's RTX 5070 PC)        │
+ │  - Download Package: IndianTrafficAI_GPU_Worker.zip (29 MB) │
+ │  - Runs 'run_worker.bat' -> Connects to your Server IP      │
+ │  - Executes YOLOv11s tracking on client's local NVIDIA GPU  │
+ │  - Streams live FPS, crossing counts, and final video back  │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+### 🎯 How to Use:
+1. **On Your PC (Server)**:
+   - Run `run_web.bat` or `python web_server.py`.
+   - The Web Studio is now live at `http://<your-ip>:5000` (e.g., `http://192.168.1.111:5000`).
+2. **On the Client PC (GPU Machine)**:
+   - Download the **Client GPU Worker** (only **29.59 MB**):
+     - Click **"⚡ GPU Worker: Get Client (29 MB)"** in the Web UI header, or copy `IndianTrafficAI_GPU_Worker.zip`.
+   - Unzip the archive.
+   - Run `setup_worker.bat` (once) to install PyTorch with CUDA 12.8 & Ultralytics.
+   - Run `run_worker.bat` and enter your Server IP when prompted.
+3. **Automatic GPU Acceleration**:
+   - The Central Web Studio header badge immediately lights up cyan: `Compute: NVIDIA GeForce RTX 5070 (Client: Client-PC)`.
+   - Upload any traffic video in your browser. The client's RTX 5070 processes the video at 70+ FPS!
+   - Real-time progress, live video playback, and formatted Excel downloads all work seamlessly in your browser!
+
+---
 
 When you push an update, target systems running `IndianTrafficAI.exe` on other PCs will **automatically detect the update, download it, apply the new files, and restart**:
 

@@ -88,6 +88,42 @@ if not os.path.exists(SAMPLE_VIDEO):
 jobs_lock = threading.Lock()
 jobs = {}
 
+# Distributed Client GPU Worker Fleet Store
+gpu_workers_lock = threading.Lock()
+gpu_workers = {}  # {worker_id: {info, last_heartbeat, status, current_job_id}}
+pending_worker_jobs = []  # list of job_ids queued for remote GPU workers
+
+def get_available_worker():
+    """Returns an active, idle GPU worker if one has checked in recently (< 15 seconds)."""
+    now = time.time()
+    with gpu_workers_lock:
+        for w_id, w in list(gpu_workers.items()):
+            if now - w.get("last_heartbeat", 0) > 15:
+                w["status"] = "offline"
+            elif w.get("status") == "idle":
+                return w
+    return None
+
+def get_active_workers_list():
+    """Returns list of currently active connected client GPU workers."""
+    now = time.time()
+    active = []
+    with gpu_workers_lock:
+        for w_id, w in list(gpu_workers.items()):
+            if now - w.get("last_heartbeat", 0) <= 15:
+                active.append({
+                    "id": w_id,
+                    "name": w.get("name", "Client GPU Worker"),
+                    "gpu_name": w.get("gpu_name", "NVIDIA GPU"),
+                    "vram_gb": w.get("vram_gb", "N/A"),
+                    "cuda_version": w.get("cuda_version", "Active"),
+                    "status": w.get("status", "idle"),
+                    "hostname": w.get("hostname", "Remote-PC"),
+                    "jobs_completed": w.get("jobs_completed", 0),
+                    "last_seen_sec": round(now - w.get("last_heartbeat", 0), 1)
+                })
+    return active
+
 # Compute Device Initialization (Universal GPU / CPU Detection with Kernel Execution Verification)
 def init_compute_device():
     has_cuda = False
@@ -725,27 +761,63 @@ def start_process():
     info = get_video_info(video_source)
     total_frames = info["total_frames"] if info else 100
 
-    with jobs_lock:
-        jobs[job_id] = {
-            "status": "processing",
-            "percent": 0,
-            "current_frame": 0,
-            "total_frames": total_frames,
-            "fps": 0.0,
-            "elapsed_sec": 0.0,
-            "eta_sec": 0.0,
-            "total_count": 0,
-            "active_counts": {},
-            "summary": None,
-            "events": []
-        }
+    # Check if an active Client GPU Worker is connected
+    available_worker = get_available_worker()
+    prefer_worker = data.get("prefer_worker", True)
 
-    t = threading.Thread(
-        target=run_video_job,
-        args=(job_id, video_source, parts, conf_thresh),
-        daemon=True
-    )
-    t.start()
+    if available_worker and prefer_worker:
+        with jobs_lock:
+            jobs[job_id] = {
+                "status": "processing",
+                "percent": 0,
+                "current_frame": 0,
+                "total_frames": total_frames,
+                "fps": 0.0,
+                "elapsed_sec": 0.0,
+                "eta_sec": 0.0,
+                "total_count": 0,
+                "active_counts": {},
+                "summary": None,
+                "events": [],
+                "assigned_worker": available_worker["id"],
+                "worker_name": available_worker.get("name"),
+                "device_name": f"{available_worker.get('gpu_name')} ({available_worker.get('name')})",
+                "video_source": video_source,
+                "line_coords": parts,
+                "conf_thresh": conf_thresh
+            }
+
+        with gpu_workers_lock:
+            available_worker["status"] = "busy"
+            available_worker["current_job_id"] = job_id
+            pending_worker_jobs.append(job_id)
+
+        print(f"[*] Dispatched Job {job_id} to Client GPU Worker: {available_worker.get('name')} [{available_worker.get('gpu_name')}]")
+    else:
+        with jobs_lock:
+            jobs[job_id] = {
+                "status": "processing",
+                "percent": 0,
+                "current_frame": 0,
+                "total_frames": total_frames,
+                "fps": 0.0,
+                "elapsed_sec": 0.0,
+                "eta_sec": 0.0,
+                "total_count": 0,
+                "active_counts": {},
+                "summary": None,
+                "events": [],
+                "assigned_worker": "local_server",
+                "worker_name": "Server Host",
+                "device_name": DEVICE_NAME
+            }
+
+        t = threading.Thread(
+            target=run_video_job,
+            args=(job_id, video_source, parts, conf_thresh),
+            daemon=True
+        )
+        t.start()
 
     return jsonify({"status": "ok", "job_id": job_id})
 
@@ -830,7 +902,7 @@ def download_csv(job_id):
 
 @app.route("/api/hardware-status")
 def hardware_status():
-    """Returns real-time GPU / CUDA / CPU compute information."""
+    """Returns real-time GPU / CUDA / CPU compute information, including connected Client GPU Workers."""
     has_cuda = DEVICE.startswith("cuda")
     vram_free_gb = 0.0
     vram_total_gb = 0.0
@@ -842,16 +914,258 @@ def hardware_status():
             vram_total_gb = round(tot_b / (1024 ** 3), 2)
         except Exception:
             pass
+
+    active_workers = get_active_workers_list()
+    compute_mode = "local_gpu" if has_cuda else "cpu"
+    
+    # If client GPU workers are online, highlight client GPU acceleration!
+    if active_workers:
+        compute_mode = "client_gpu_fleet"
+        primary = active_workers[0]
+        device_name = f"{primary['gpu_name']} ({primary['name']})"
+        has_cuda = True
+
     return jsonify({
         "has_cuda": has_cuda,
         "device": DEVICE,
         "device_name": device_name,
+        "compute_mode": compute_mode,
         "cuda_version": torch.version.cuda or "N/A",
         "torch_version": torch.__version__,
         "supports_fp16": SUPPORTS_FP16,
         "vram_free_gb": vram_free_gb,
-        "vram_total_gb": vram_total_gb
+        "vram_total_gb": vram_total_gb,
+        "connected_workers": active_workers,
+        "worker_count": len(active_workers)
     })
+
+
+# =========================================================================
+# DISTRIBUTED CLIENT GPU WORKER FLEET API
+# Allows remote client PCs with NVIDIA GPUs (e.g. RTX 5070) to process jobs
+# =========================================================================
+
+@app.route("/api/worker/register", methods=["POST"])
+def worker_register():
+    """Client GPU worker registration endpoint."""
+    data = request.get_json() or {}
+    w_id = data.get("worker_id") or str(uuid.uuid4())[:8]
+    now = time.time()
+    
+    with gpu_workers_lock:
+        gpu_workers[w_id] = {
+            "id": w_id,
+            "name": data.get("name") or f"Worker-{w_id}",
+            "hostname": data.get("hostname", "Client-PC"),
+            "gpu_name": data.get("gpu_name", "NVIDIA GPU"),
+            "cuda_version": data.get("cuda_version", "Active"),
+            "vram_gb": data.get("vram_gb", "N/A"),
+            "last_heartbeat": now,
+            "status": "idle",
+            "current_job_id": None,
+            "jobs_completed": 0
+        }
+    
+    print(f"[+] Client GPU Worker Registered: {gpu_workers[w_id]['name']} [{gpu_workers[w_id]['gpu_name']}]")
+    return jsonify({"status": "ok", "worker_id": w_id, "message": "Worker registered successfully"})
+
+
+@app.route("/api/worker/heartbeat", methods=["POST"])
+def worker_heartbeat():
+    """Client GPU worker heartbeat."""
+    data = request.get_json() or {}
+    w_id = data.get("worker_id")
+    if not w_id:
+        return jsonify({"status": "error", "message": "worker_id required"}), 400
+    
+    with gpu_workers_lock:
+        if w_id in gpu_workers:
+            gpu_workers[w_id]["last_heartbeat"] = time.time()
+            if "status" in data and gpu_workers[w_id]["status"] != "busy":
+                gpu_workers[w_id]["status"] = data["status"]
+            return jsonify({"status": "ok", "ack": True})
+        else:
+            return jsonify({"status": "need_registration"}), 404
+
+
+@app.route("/api/worker/job/poll", methods=["GET"])
+def worker_poll_job():
+    """Worker checks if there is a pending job assigned to it."""
+    w_id = request.args.get("worker_id")
+    if not w_id:
+        return jsonify({"status": "error", "message": "worker_id required"}), 400
+
+    with gpu_workers_lock:
+        if w_id not in gpu_workers:
+            return jsonify({"status": "need_registration"}), 404
+        gpu_workers[w_id]["last_heartbeat"] = time.time()
+
+        job_to_assign = None
+        if pending_worker_jobs:
+            job_to_assign = pending_worker_jobs.pop(0)
+
+    if not job_to_assign:
+        return jsonify({"status": "idle"})
+
+    with jobs_lock:
+        job = jobs.get(job_to_assign)
+        if not job or job.get("status") == "completed":
+            return jsonify({"status": "idle"})
+
+        job["status"] = "processing"
+        job["assigned_worker"] = w_id
+        
+        return jsonify({
+            "status": "job_available",
+            "job_id": job_to_assign,
+            "video_url": f"/api/worker/job/{job_to_assign}/video",
+            "line_coords": job.get("line_coords", [100, 450, 1180, 450]),
+            "conf_thresh": job.get("conf_thresh", 0.35),
+            "video_filename": os.path.basename(job.get("video_source", "video.mp4"))
+        })
+
+
+@app.route("/api/worker/job/<job_id>/video")
+def worker_download_video(job_id):
+    """Worker downloads raw video for local GPU processing."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return "Job not found", 404
+        video_path = job.get("video_source")
+        if not video_path or not os.path.exists(video_path):
+            return "Video file missing", 404
+        return send_file(video_path, mimetype="video/mp4")
+
+
+@app.route("/api/worker/job/<job_id>/progress", methods=["POST"])
+def worker_report_progress(job_id):
+    """Worker reports live frame processing progress and vehicle counts."""
+    data = request.get_json() or {}
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"status": "error", "message": "Job not found"}), 404
+
+        job["percent"] = data.get("percent", job.get("percent", 0))
+        job["current_frame"] = data.get("current_frame", job.get("current_frame", 0))
+        job["total_frames"] = data.get("total_frames", job.get("total_frames", 100))
+        job["fps"] = data.get("fps", job.get("fps", 0.0))
+        job["elapsed_sec"] = data.get("elapsed_sec", 0.0)
+        job["eta_sec"] = data.get("eta_sec", 0.0)
+        job["total_count"] = data.get("total_count", job.get("total_count", 0))
+        job["active_counts"] = data.get("active_counts", {})
+        job["status"] = "processing"
+
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/worker/job/<job_id>/complete", methods=["POST"])
+def worker_job_complete(job_id):
+    """Worker submits final processed video and crossing events."""
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"status": "error", "message": "Job not found"}), 404
+
+    # Save uploaded processed video
+    web_video_path = os.path.join(OUTPUTS_DIR, f"web_{job_id}.mp4")
+    if "video" in request.files:
+        video_file = request.files["video"]
+        video_file.save(web_video_path)
+    
+    # Parse events & summary metadata
+    events = []
+    summary_data = {}
+    if "events" in request.form:
+        try:
+            events = json.loads(request.form["events"])
+        except Exception:
+            events = []
+    if "summary" in request.form:
+        try:
+            summary_data = json.loads(request.form["summary"])
+        except Exception:
+            summary_data = {}
+
+    excel_path = os.path.join(OUTPUTS_DIR, f"report_{job_id}.xlsx")
+    csv_path = os.path.join(OUTPUTS_DIR, f"log_{job_id}.csv")
+
+    try:
+        generate_traffic_excel(events, summary_data, excel_path)
+    except Exception as e:
+        print(f"[!] Excel generation warning: {e}")
+
+    try:
+        df = pd.DataFrame(events)
+        df.to_csv(csv_path, index=False)
+    except Exception:
+        pass
+
+    with jobs_lock:
+        job["status"] = "completed"
+        job["percent"] = 100
+        job["summary"] = summary_data
+        job["events"] = events
+        job["web_video_path"] = web_video_path
+        job["excel_path"] = excel_path
+        job["csv_path"] = csv_path
+        assigned_worker = job.get("assigned_worker")
+
+    with gpu_workers_lock:
+        if assigned_worker and assigned_worker in gpu_workers:
+            gpu_workers[assigned_worker]["status"] = "idle"
+            gpu_workers[assigned_worker]["current_job_id"] = None
+            gpu_workers[assigned_worker]["jobs_completed"] += 1
+
+    print(f"[OK] Job {job_id} successfully completed by Client GPU Worker! Results saved.")
+    return jsonify({"status": "ok", "job_id": job_id})
+
+
+@app.route("/api/worker/job/<job_id>/error", methods=["POST"])
+def worker_job_error(job_id):
+    """Worker reports a failure during processing."""
+    data = request.get_json() or {}
+    err = data.get("error", "Unknown worker error")
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = f"Worker Error: {err}"
+            assigned_worker = jobs[job_id].get("assigned_worker")
+
+    with gpu_workers_lock:
+        if assigned_worker and assigned_worker in gpu_workers:
+            gpu_workers[assigned_worker]["status"] = "idle"
+            gpu_workers[assigned_worker]["current_job_id"] = None
+
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/workers", methods=["GET"])
+def get_workers():
+    """Returns all active connected GPU workers."""
+    return jsonify({
+        "status": "ok",
+        "workers": get_active_workers_list()
+    })
+
+
+@app.route("/api/download/worker-client", methods=["GET"])
+def download_worker_client_zip():
+    """Generates and serves the lightweight Client GPU Worker package (.zip ~20 MB)."""
+    zip_path = os.path.join(APP_DIR, "IndianTrafficAI_GPU_Worker.zip")
+    if not os.path.exists(zip_path):
+        import build_worker_package
+        build_worker_package.build_package(zip_path)
+    
+    if os.path.exists(zip_path):
+        return send_file(
+            zip_path,
+            as_attachment=True,
+            download_name="IndianTrafficAI_GPU_Worker.zip",
+            mimetype="application/zip"
+        )
+    return "Worker package not found", 404
 
 # --- Auto-Update Endpoints ---
 update_progress = {"percent": 0, "status": "idle", "error": None}

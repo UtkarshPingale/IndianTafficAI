@@ -5,7 +5,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Hardware Status Check ---
+    // --- Hardware & Client GPU Worker Status Check ---
     function checkHardwareStatus() {
         fetch('/api/hardware-status')
             .then(res => res.json())
@@ -13,30 +13,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 const label = document.getElementById('gpuDeviceLabel');
                 const dot = document.getElementById('gpuStatusDot');
                 const badge = document.getElementById('gpuBadge');
+                const workerLabel = document.getElementById('workerStatusLabel');
                 if (!label) return;
 
-                if (hw.has_cuda) {
+                if (hw.connected_workers && hw.connected_workers.length > 0) {
+                    const primary = hw.connected_workers[0];
+                    label.textContent = `${primary.gpu_name} (Client: ${primary.name})`;
+                    label.style.color = '#38bdf8';
+                    if (badge) badge.title = `Remote Client GPU Acceleration Active!\nClient: ${primary.name} (${primary.hostname})\nGPU: ${primary.gpu_name}\nCUDA: ${primary.cuda_version}\nVRAM: ${primary.vram_gb}\nTotal Connected Workers: ${hw.connected_workers.length}`;
+                    if (dot) {
+                        dot.style.background = '#38bdf8';
+                        dot.classList.add('pulse');
+                    }
+                    if (workerLabel) {
+                        workerLabel.textContent = `${hw.connected_workers.length} Client GPU Online`;
+                        workerLabel.style.color = '#38bdf8';
+                    }
+                } else if (hw.has_cuda) {
                     label.textContent = `${hw.device_name}`;
                     label.style.color = '#10b981';
-                    if (badge) badge.title = `CUDA Hardware Acceleration Active\nDevice: ${hw.device_name}\nCUDA: ${hw.cuda_version} | PyTorch: ${hw.torch_version}\nFree VRAM: ${hw.vram_free_gb} / ${hw.vram_total_gb} GB`;
+                    if (badge) badge.title = `Local Server CUDA Hardware Acceleration Active\nDevice: ${hw.device_name}\nCUDA: ${hw.cuda_version} | PyTorch: ${hw.torch_version}\nFree VRAM: ${hw.vram_free_gb} / ${hw.vram_total_gb} GB`;
                     if (dot) {
                         dot.style.background = '#10b981';
                         dot.classList.add('pulse');
                     }
+                    if (workerLabel) {
+                        workerLabel.textContent = `Get Client (29 MB)`;
+                        workerLabel.style.color = '#a5b4fc';
+                    }
                 } else {
                     label.textContent = `${hw.device_name}`;
                     label.style.color = '#f59e0b';
-                    if (badge) badge.title = `Compute: ${hw.device_name}\nCUDA hardware acceleration unavailable or GPU architecture incompatible.\nUsing optimized multi-threaded CPU engine.`;
+                    if (badge) badge.title = `Compute: ${hw.device_name}\nUsing multi-threaded CPU engine.\nConnect a Client GPU Worker to accelerate!`;
                     if (dot) {
                         dot.style.background = '#f59e0b';
                         dot.classList.remove('pulse');
+                    }
+                    if (workerLabel) {
+                        workerLabel.textContent = `Get Client (29 MB)`;
+                        workerLabel.style.color = '#a5b4fc';
                     }
                 }
             })
             .catch(err => console.warn('Could not query hardware status:', err));
     }
     checkHardwareStatus();
-    setInterval(checkHardwareStatus, 15000);
+    setInterval(checkHardwareStatus, 8000);
     // --- System Version & Auto-Update Logic ---
     let latestUpdateInfo = null;
 
