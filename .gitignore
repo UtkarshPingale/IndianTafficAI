@@ -17,6 +17,7 @@ apply_update.bat
 *.zip
 *.tar
 *.gz
+IndianTrafficAI_GPU_Worker/
 
 # Local Runtime Uploads, Output Videos & Temporary Reports
 outputs/

@@ -4,6 +4,8 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 scipy>=1.10.0
 pillow>=10.0.0
+imageio-ffmpeg>=0.4.9
+pyyaml>=6.0
 
 # PyTorch
 # NOTE for NVIDIA GPU acceleration (CUDA 12.4):

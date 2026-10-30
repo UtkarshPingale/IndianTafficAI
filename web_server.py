@@ -16,7 +16,10 @@ import cv2
 import torch
 import pandas as pd
 from ultralytics import YOLO
-import imageio_ffmpeg
+try:
+    import imageio_ffmpeg
+except Exception:
+    imageio_ffmpeg = None
 
 from vehicle_classes import map_class_name, get_category_color
 from line_counter import LineCounter
@@ -417,7 +420,15 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
         excel_path = os.path.join(OUTPUTS_DIR, f"report_{job_id}.xlsx")
         csv_path = os.path.join(OUTPUTS_DIR, f"log_{job_id}.csv")
 
-        ff_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        ff_exe = None
+        if imageio_ffmpeg is not None:
+            try:
+                ff_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception:
+                ff_exe = None
+        if not ff_exe:
+            ff_exe = "ffmpeg"
+
         frame_bytes = proc_w * proc_h * 3
 
         # Hardware-accelerated input video decoding via NVIDIA NVDEC
