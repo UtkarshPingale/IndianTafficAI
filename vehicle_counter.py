@@ -77,6 +77,17 @@ class VehicleCounterSystem:
                     # Test actual kernel execution on GPU architecture
                     test_t = torch.zeros((1, 1), device="cuda:0") + 1.0
                     del test_t
+                    # Test cuDNN convolution execution
+                    try:
+                        with torch.no_grad():
+                            test_conv = torch.nn.functional.conv2d(
+                                torch.zeros((1, 1, 3, 3), device="cuda:0"),
+                                torch.zeros((1, 1, 3, 3), device="cuda:0")
+                            )
+                            del test_conv
+                    except Exception as cudnn_err:
+                        print(f"[!] Warning: cuDNN sublibrary issue ({cudnn_err}). Disabling cuDNN, keeping CUDA active.")
+                        torch.backends.cudnn.enabled = False
                     torch.cuda.empty_cache()
                     self.device = "cuda:0"
                     self.device_name = torch.cuda.get_device_name(0)
@@ -416,8 +427,17 @@ class VehicleCounterSystem:
                         results = self.model.track(**track_args)[0]
                     except Exception as e:
                         err_str = str(e).lower()
-                        if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str) and self.device != "cpu":
-                            print(f"[!] CUDA runtime error: {e}. Switching seamlessly to CPU...")
+                        # If cuDNN engine loading failed, try turning off cuDNN first before dropping CUDA
+                        if ("cudnn" in err_str or "sublibrary" in err_str) and torch.backends.cudnn.enabled:
+                            print(f"[!] cuDNN issue encountered ({e}). Disabling cuDNN and retrying on CUDA...")
+                            torch.backends.cudnn.enabled = False
+                            try:
+                                results = self.model.track(**track_args)[0]
+                            except Exception as e2:
+                                e = e2
+                                err_str = str(e).lower()
+                        if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str or "cudnn" in err_str or "sublibrary" in err_str) and self.device != "cpu":
+                            print(f"[!] Hardware CUDA/cuDNN error: {e}. Switching seamlessly to CPU...")
                             self.device = "cpu"
                             self.device_name = "CPU Mode"
                             track_args["device"] = "cpu"

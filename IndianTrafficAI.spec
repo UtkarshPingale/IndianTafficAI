@@ -34,14 +34,14 @@ all_datas = ultralytics_datas + ffmpeg_datas + project_datas
 torch_bins = collect_dynamic_libs('torch')
 torchvision_bins = collect_dynamic_libs('torchvision')
 
-# Exclude unnecessary heavy scientific, compiler & precompiled DLLs to stay within GitHub's 2.0 GB release limit
+# Exclude only truly unreferenced standalone DLLs (preserving all CUDA/cuDNN convolution engines)
 EXCLUDE_DLLS = {
-    'cufft64_11.dll', 'cufftw64_11.dll', 'cusparse64_12.dll',
-    'cusolver64_11.dll', 'cusolverMg64_11.dll', 'cudnn_adv64_9.dll',
-    'curand64_10.dll', 'cudnn_engines_precompiled64_9.dll',
-    'cudnn_engines_runtime_compiled64_9.dll', 'nvrtc64_120_0.dll',
-    'nvrtc64_120_0.alt.dll', 'nvJitLink_120_0.dll', 'cupti64_2024.1.0.dll',
-    'cupti64_2025.1.0.dll', 'nvrtc-builtins64_124.dll', 'nvrtc-builtins64_128.dll'
+    'caffe2_nvrtc.dll',
+    'cudnn_adv64_9.dll',
+    'cusolverMg64_11.dll',
+    'curand64_10.dll',
+    'nvrtc64_120_0.alt.dll',
+    'cufftw64_11.dll'
 }
 all_bins = [b for b in (torch_bins + torchvision_bins) if not any(b[0].endswith(x) for x in EXCLUDE_DLLS)]
 

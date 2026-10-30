@@ -52,6 +52,16 @@ def get_hardware_info():
             # Test actual CUDA kernel execution on host GPU
             test_tensor = torch.zeros((1, 1), device="cuda:0") + 1.0
             del test_tensor
+            # Test cuDNN convolution execution
+            try:
+                with torch.no_grad():
+                    test_conv = torch.nn.functional.conv2d(
+                        torch.zeros((1, 1, 3, 3), device="cuda:0"),
+                        torch.zeros((1, 1, 3, 3), device="cuda:0")
+                    )
+                    del test_conv
+            except Exception as cudnn_err:
+                torch.backends.cudnn.enabled = False
             torch.cuda.empty_cache()
 
             free_b, tot_b = torch.cuda.mem_get_info(0)

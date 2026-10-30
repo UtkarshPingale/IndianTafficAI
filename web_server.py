@@ -125,10 +125,22 @@ def init_compute_device():
                 except Exception:
                     pass
 
+                # Test cuDNN / convolution execution on CUDA
+                try:
+                    with torch.no_grad():
+                        test_conv = torch.nn.functional.conv2d(
+                            torch.zeros((1, 1, 3, 3), device="cuda:0"),
+                            torch.zeros((1, 1, 3, 3), device="cuda:0")
+                        )
+                        del test_conv
+                    torch.backends.cudnn.benchmark = True
+                except Exception as cudnn_err:
+                    print(f"[!] Warning: cuDNN sublibrary issue ({cudnn_err}). Disabling cuDNN, keeping CUDA active.")
+                    torch.backends.cudnn.enabled = False
+
                 has_cuda = True
                 device = "cuda:0"
                 device_name = raw_name
-                torch.backends.cudnn.benchmark = True
                 print(f"[*] Compute Device: {device} ({device_name}) [CUDA Active, FP16: {supports_fp16}, VRAM: {vram_free}/{vram_total} GB]")
         except Exception as e:
             err_msg = str(e)
@@ -501,8 +513,17 @@ def run_video_job(job_id, video_path, line_coords, conf_thresh):
                 results = model.track(**track_kwargs)[0]
             except Exception as e:
                 err_str = str(e).lower()
-                if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str) and current_device != "cpu":
-                    print(f"[!] CUDA error on frame {frame_idx} ({e}). Seamlessly switching to CPU mode...")
+                # If cuDNN engine loading failed, try turning off cuDNN first before dropping CUDA
+                if ("cudnn" in err_str or "sublibrary" in err_str) and torch.backends.cudnn.enabled:
+                    print(f"[!] cuDNN issue encountered ({e}). Disabling cuDNN and retrying on CUDA...")
+                    torch.backends.cudnn.enabled = False
+                    try:
+                        results = model.track(**track_kwargs)[0]
+                    except Exception as e2:
+                        e = e2
+                        err_str = str(e).lower()
+                if ("cuda" in err_str or "kernel" in err_str or "device" in err_str or "out of memory" in err_str or "cudnn" in err_str or "sublibrary" in err_str) and current_device != "cpu":
+                    print(f"[!] Hardware CUDA/cuDNN error on frame {frame_idx} ({e}). Seamlessly switching to CPU mode...")
                     current_device = "cpu"
                     track_kwargs["device"] = "cpu"
                     try:
