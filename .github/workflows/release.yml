@@ -1,0 +1,87 @@
+name: Build and Release Indian Traffic AI
+
+# Fires automatically whenever you push a version tag, e.g.:
+#   git tag v1.0.5 && git push origin v1.0.5
+# Or can be manually triggered in GitHub Actions tab by pressing "Run workflow"
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.5)'
+        required: true
+        default: 'v1.0.5'
+      release_notes:
+        description: 'Release notes / changelog'
+        required: false
+        default: 'Automated release build of Indian Traffic AI (.exe and Worker package)'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Standalone Executable & Worker Package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Core Packaging Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics opencv-python numpy scipy pillow pandas openpyxl Flask Werkzeug requests pyinstaller
+
+      - name: Build Lightweight Client GPU Worker Package (29 MB)
+        shell: cmd
+        run: |
+          python build_worker_package.py
+          if not exist IndianTrafficAI_GPU_Worker.zip (
+            echo [!] Failed to create IndianTrafficAI_GPU_Worker.zip
+            exit /b 1
+          )
+
+      - name: Build Standalone Windows Executable (.exe)
+        shell: cmd
+        run: |
+          pyinstaller --noconfirm --clean --onefile --console --name IndianTrafficAI --add-data "templates;templates" --add-data "static;static" --add-data "models;models" --add-data "version.json;." --hidden-import=ultralytics --hidden-import=cv2 --hidden-import=flask --hidden-import=openpyxl --hidden-import=pandas main_launcher.py
+
+      - name: Verify Executable Exists
+        shell: cmd
+        run: |
+          if not exist dist\IndianTrafficAI.exe (
+            echo [!] BUILD FAILED: IndianTrafficAI.exe not found in dist\
+            exit /b 1
+          )
+
+      - name: Package Portable Executable ZIP
+        shell: cmd
+        run: |
+          powershell -Command "Compress-Archive -Path dist\IndianTrafficAI.exe, version.json, README.md -DestinationPath dist\IndianTrafficAI_Release.zip -Force"
+
+      - name: Publish GitHub Release & Attach Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Indian Traffic AI ${{ github.event.inputs.tag_name || github.ref_name }}
+          body: ${{ github.event.inputs.release_notes || 'Automated release build for Indian Traffic AI. Download the standalone executable or the lightweight GPU Worker node below.' }}
+          files: |
+            dist/IndianTrafficAI.exe
+            dist/IndianTrafficAI_Release.zip
+            IndianTrafficAI_GPU_Worker.zip
+            version.json
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
