@@ -1,10 +1,10 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "app_name": "Indian Traffic AI",
   "release_date": "2026-10-30",
   "update_manifest_url": "https://raw.githubusercontent.com/UtkarshPingale/IndianTafficAI/main/version.json",
   "download_url": "https://github.com/UtkarshPingale/IndianTafficAI/releases/latest/download/IndianTrafficAI_Release.zip",
-  "changelog": "v1.0.6: Fixed imageio_ffmpeg dependency and added safe fallback in web server",
+  "changelog": "v1.0.7: Seamless in-memory auto-update and restart (no .bat files created)",
   "auto_check_on_launch": true,
   "auto_restart_after_update": true
 }

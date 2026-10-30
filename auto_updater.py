@@ -13,6 +13,7 @@ import json
 import time
 import zipfile
 import shutil
+import base64
 import urllib.request
 import subprocess
 from pathlib import Path
@@ -207,89 +208,96 @@ def extract_update_package(zip_path: str) -> str:
     return extracted_dir
 
 
-def generate_updater_batch(target_dir: str, source_dir: str, exe_path: str, pid: int) -> str:
+def launch_detached_updater_and_restart(extracted_dir: str):
     """
-    Generates a detached Windows batch script that safely waits for this process
-    to exit, replaces all files, deletes temporary staging, and relaunches the app.
-    """
-    bat_path = os.path.join(APP_DIR, "apply_update.bat")
-    
-    # Create robust batch script with error handling and process wait
-    content = f"""@echo off
-chcp 65001 > nul
-title Applying Indian Traffic AI Update...
-echo ========================================================
-echo       INDIAN TRAFFIC AI - AUTOMATIC SYSTEM UPDATER
-echo ========================================================
-echo [*] Waiting for Indian Traffic AI (PID {pid}) to shut down...
-
-:wait_pid
-tasklist /fi "PID eq {pid}" 2>nul | findstr /i "{pid}" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto wait_pid
-)
-
-echo [*] Process terminated. Releasing file locks...
-timeout /t 1 /nobreak >nul
-
-echo [*] Copying updated files to application directory...
-xcopy "{source_dir}\\*" "{target_dir}\\" /s /e /y /i /q >nul
-if errorlevel 1 (
-    echo [!] Warning: Some files could not be replaced directly. Retrying with force...
-    timeout /t 2 /nobreak >nul
-    xcopy "{source_dir}\\*" "{target_dir}\\" /s /e /y /i /q >nul
-)
-
-echo [*] Cleaning up staging cache...
-rd /s /q "{source_dir}" 2>nul
-
-echo [*] Update applied successfully!
-echo [*] Restarting Indian Traffic AI...
-start "" "{exe_path}"
-
-exit
-"""
-    with open(bat_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    return bat_path
-
-
-def apply_and_restart(extracted_dir: str):
-    """
-    Spawns the detached updater batch script and terminates current process
-    so that Windows unlocks the running executable and DLLs.
+    Spawns an in-memory, completely detached background updater via Windows PowerShell.
+    NO apply_update.bat or batch script file is created on disk.
+    Waits for this process to terminate, replaces files seamlessly, cleans up staging,
+    and restarts Indian Traffic AI automatically.
     """
     pid = os.getpid()
-    target_dir = APP_DIR
-    
+    target_dir = os.path.abspath(APP_DIR)
+    source_dir = os.path.abspath(extracted_dir)
+    staging_dir = os.path.abspath(UPDATE_STAGING_DIR)
+
     if IS_FROZEN:
-        exe_path = os.path.join(APP_DIR, EXE_NAME)
+        exe_path = os.path.abspath(os.path.join(APP_DIR, EXE_NAME))
+        restart_stmt = f'Start-Process -FilePath "{exe_path}" -WorkingDirectory "{target_dir}"'
     else:
-        exe_path = sys.executable
+        exe_path = os.path.abspath(sys.executable)
+        launcher_py = os.path.abspath(os.path.join(APP_DIR, "main_launcher.py"))
+        restart_stmt = f'Start-Process -FilePath "{exe_path}" -ArgumentList "{launcher_py}" -WorkingDirectory "{target_dir}"'
 
-    updater_bat = generate_updater_batch(
-        target_dir=target_dir,
-        source_dir=extracted_dir,
-        exe_path=exe_path,
-        pid=pid
-    )
+    ps_script = f"""
+$procId = {pid}
+$source = '{source_dir}'
+$dest = '{target_dir}'
+$staging = '{staging_dir}'
 
-    print(f"\n[*] Launching detached updater: {updater_bat}")
-    print("[*] Terminating current process to release locks and restart...")
+# 1. Wait for current process to exit and release file locks
+if ($procId -gt 0) {{
+    try {{
+        Wait-Process -Id $procId -Timeout 15 -ErrorAction SilentlyContinue
+    }} catch {{}}
+}}
+Start-Sleep -Milliseconds 700
 
-    # Spawn updater completely detached from this process tree
+# 2. Overwrite files from update package with retry loop
+for ($i = 0; $i -lt 10; $i++) {{
+    try {{
+        Copy-Item -Path "$source\\*" -Destination "$dest" -Recurse -Force -ErrorAction Stop
+        break
+    }} catch {{
+        Start-Sleep -Milliseconds 500
+    }}
+}}
+
+# 3. Clean up staging cache and any leftover old bat files
+try {{
+    Remove-Item -Path "$staging" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path (Join-Path $dest "apply_update.bat") -Force -ErrorAction SilentlyContinue
+}} catch {{}}
+
+# 4. Seamlessly relaunch the application
+try {{
+    {restart_stmt}
+}} catch {{}}
+"""
+
+    encoded_cmd = base64.b64encode(ps_script.encode("utf-16le")).decode("ascii")
+    cmd = [
+        "powershell.exe",
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+        encoded_cmd
+    ]
+
+    print("[*] Launching seamless in-memory background updater (no .bat files created)...")
+    print("[*] Terminating current process to release locks and restart automatically...")
+
     DETACHED_FLAGS = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     subprocess.Popen(
-        ["cmd.exe", "/c", updater_bat],
+        cmd,
         creationflags=DETACHED_FLAGS,
         close_fds=True
     )
 
-    # Clean exit
     time.sleep(0.5)
     sys.exit(0)
+
+
+def generate_updater_batch(target_dir: str, source_dir: str, exe_path: str, pid: int) -> str:
+    """Deprecated: in-memory updater is used instead of creating .bat files."""
+    return ""
+
+
+def apply_and_restart(extracted_dir: str):
+    """Seamlessly updates application files and restarts without creating any .bat files."""
+    launch_detached_updater_and_restart(extracted_dir)
 
 
 def perform_full_update_and_restart(download_url: str, progress_callback=None):
