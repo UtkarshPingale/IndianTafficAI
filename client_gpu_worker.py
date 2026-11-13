@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import torch
 
-from vehicle_counter import VehicleCounterSystem
+from main import VehicleCounterSystem
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(APP_DIR, "worker_config.json")

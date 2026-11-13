@@ -471,10 +471,15 @@ body {
     gap: 12px;
     padding: 24px;
     text-align: center;
-    background: rgba(5, 8, 17, 0.9);
+    background: rgba(5, 8, 17, 0.3);
     color: var(--text-muted);
     font-size: 0.88rem;
     pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.canvas-placeholder.hidden {
+    display: none !important;
 }
 
 .placeholder-icon {

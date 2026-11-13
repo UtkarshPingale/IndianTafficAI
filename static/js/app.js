@@ -458,21 +458,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Draw Glowing Virtual Line
         ctx.save();
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.4)';
-        ctx.lineWidth = 10;
+        ctx.shadowColor = '#00F0FF';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+        ctx.lineWidth = 14;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(lineStart.x, lineStart.y);
         ctx.lineTo(lineEnd.x, lineEnd.y);
         ctx.stroke();
 
-        ctx.strokeStyle = '#06B6D4';
-        ctx.lineWidth = 4;
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#00E5FF';
+        ctx.lineWidth = 5;
         ctx.stroke();
 
         // Inner dashed bright core
         ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2;
         ctx.setLineDash([8, 6]);
         ctx.stroke();
         ctx.restore();
@@ -485,12 +488,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const len = Math.hypot(dx, dy) || 1;
         const perpX = -dy / len;
         const perpY = dx / len;
-        const arrowLen = 30;
+        const arrowLen = 32;
 
         ctx.save();
         ctx.strokeStyle = '#FACC15';
         ctx.fillStyle = '#FACC15';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(midX, midY);
         ctx.lineTo(midX + perpX * arrowLen, midY + perpY * arrowLen);
@@ -502,15 +505,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const angle = Math.atan2(perpY, perpX);
         ctx.beginPath();
         ctx.moveTo(tipX, tipY);
-        ctx.lineTo(tipX - 10 * Math.cos(angle - Math.PI / 6), tipY - 10 * Math.sin(angle - Math.PI / 6));
-        ctx.lineTo(tipX - 10 * Math.cos(angle + Math.PI / 6), tipY - 10 * Math.sin(angle + Math.PI / 6));
+        ctx.lineTo(tipX - 12 * Math.cos(angle - Math.PI / 6), tipY - 12 * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(tipX - 12 * Math.cos(angle + Math.PI / 6), tipY - 12 * Math.sin(angle + Math.PI / 6));
         ctx.closePath();
         ctx.fill();
 
         // Flow Label
-        ctx.font = '600 11px Inter, sans-serif';
+        ctx.font = '700 12px Inter, sans-serif';
         ctx.fillStyle = '#FACC15';
-        ctx.fillText('INWARD FLOW ⬇', midX + perpX * (arrowLen + 15) - 45, midY + perpY * (arrowLen + 15) + 4);
+        ctx.fillText('INWARD FLOW ⬇', midX + perpX * (arrowLen + 16) - 48, midY + perpY * (arrowLen + 16) + 4);
         ctx.restore();
 
         // Draw Handle A (Start)
@@ -523,25 +526,31 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.save();
         // Glow
         ctx.shadowColor = '#FACC15';
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 15;
 
         // Outer Ring
         ctx.fillStyle = '#FACC15';
         ctx.beginPath();
-        ctx.arc(x, y, HANDLE_RADIUS, 0, Math.PI * 2);
+        ctx.arc(x, y, 14, 0, Math.PI * 2);
         ctx.fill();
 
         // Inner Core
         ctx.fillStyle = '#0F172A';
         ctx.beginPath();
-        ctx.arc(x, y, HANDLE_RADIUS - 3, 0, Math.PI * 2);
+        ctx.arc(x, y, 9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Center Pip
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
 
         // Label Tag
         ctx.shadowBlur = 0;
-        ctx.font = '600 10px JetBrains Mono, monospace';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(label, x - 18, y - 14);
+        ctx.font = '700 12px Inter, sans-serif';
+        ctx.fillStyle = '#FDE047';
+        ctx.fillText(label, x - 26, y - 18);
         ctx.restore();
     }
 
@@ -641,7 +650,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     activeVideoSource = data.video_path;
                     videoResolution = { w: data.width || 1280, h: data.height || 720 };
                     displayActiveFile(data.filename, `${videoResolution.w}x${videoResolution.h} • ${data.fps} FPS`);
-                    loadPreviewFrame(data.frame_url);
+                    const fUrl = data.frame_url || data.preview_url;
+                    loadPreviewFrame(fUrl);
                 } else {
                     alert('Error loading sample video: ' + (data.message || 'Unknown error'));
                 }
@@ -672,7 +682,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     activeVideoSource = data.video_path;
                     videoResolution = { w: data.width || 1280, h: data.height || 720 };
                     displayActiveFile(data.filename, `${videoResolution.w}x${videoResolution.h} • ${(file.size / (1024 * 1024)).toFixed(1)} MB`);
-                    loadPreviewFrame(data.frame_url);
+                    const fUrl = data.frame_url || data.preview_url;
+                    loadPreviewFrame(fUrl);
                 } else {
                     alert('Upload failed: ' + (data.message || 'Unknown error'));
                 }
@@ -688,6 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fileMetaDisplay.textContent = meta;
         fileInfoBar.classList.remove('hidden');
         dropzone.classList.add('hidden');
+        canvasPlaceholder.classList.add('hidden');
         startProcessBtn.disabled = false;
         startBtnText.textContent = 'Start Real-Time Processing on RTX 4070 SUPER';
     }
@@ -716,6 +728,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function loadPreviewFrame(url) {
+        canvasPlaceholder.classList.add('hidden');
+        if (!url) {
+            drawCanvas();
+            return;
+        }
+
         previewImage = new Image();
         previewImage.crossOrigin = 'anonymous';
         previewImage.onload = () => {
@@ -757,7 +775,15 @@ document.addEventListener('DOMContentLoaded', () => {
             drawCanvas();
             updateCoordsDisplay();
         };
-        previewImage.src = url + '?t=' + Date.now();
+
+        previewImage.onerror = (err) => {
+            console.warn('Could not load frame image from:', url);
+            hasPreviewFrame = false;
+            canvasPlaceholder.classList.add('hidden');
+            drawCanvas();
+        };
+
+        previewImage.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
     }
 
     // -------------------------------------------------------------
